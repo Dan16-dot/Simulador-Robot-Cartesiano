@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Simulador Robot Cartesiano</title>
+    <style>
+        :root { --main: #4dabf7; --bg: #f8f9fa; --txt: #2c3e50; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--txt); text-align: center; padding: 20px; }
+        .panel { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); display: inline-block; }
+        canvas { background: #ffffff; border: 2px solid #eee; border-radius: 10px; margin: 20px 0; }
+        .controls { display: flex; gap: 10px; justify-content: center; }
+        button { padding: 12px 20px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-ok { background: #d3f9d8; color: #2b8a3e; }
+        .btn-bad { background: #fff4e6; color: #d9480f; }
+        .btn-stop { background: #ff8787; color: white; width: 100%; margin-top: 10px; }
+        #status { margin-top: 15px; font-weight: 500; color: var(--main); }
+    </style>
+</head>
+<body>
+
+<div class="panel">
+    <h2>Control de Manipulador Cartesiano</h2>
+    
+    <canvas id="canvasRobot" width="500" height="400"></canvas>
+
+    <div class="controls">
+        <button class="btn-ok" onclick="enviar('OK')">Detectar PIEZA OK</button>
+        <button class="btn-bad" onclick="enviar('DEFECTO')">Detectar DEFECTO</button>
+    </div>
+    <button class="btn-stop" onclick="parada()">PARADA DE EMERGENCIA</button>
+
+    <div id="status">Listo para operar</div>
+</div>
+
+<script>
+    const canvas = document.getElementById('canvasRobot');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
+
+    // Estado visual del robot (escalado para el dibujo)
+    let robotVis = { x: 250, y: 50, z_radio: 12, color: '#4dabf7' };
+
+    function dibujar() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Dibujar Zonas (Escaladas: X:0->20, X:500->450)
+        ctx.fillStyle = "#f1f3f5"; ctx.fillRect(20, 330, 50, 50); // SCRAP (0,500)
+        ctx.fillStyle = "#ebfbee"; ctx.fillRect(430, 330, 50, 50); // OK (500,500)
+        ctx.fillStyle = "#e7f5ff"; ctx.fillRect(225, 25, 50, 50); // PICK
+        
+        ctx.font = "10px Arial"; ctx.fillStyle = "#999";
+        ctx.fillText("SCRAP (0,500)", 15, 390);
+        ctx.fillText("DESTINO OK (500,500)", 390, 390);
+
+        // Dibujar Brazo (El "Dibujo")
+        ctx.beginPath();
+        ctx.arc(robotVis.x, robotVis.y, robotVis.z_radio, 0, Math.PI*2);
+        ctx.fillStyle = robotVis.color;
+        ctx.fill();
+        ctx.strokeStyle = "#1971c2"; ctx.stroke();
+    }
+
+    async function animar(destCoord) {
+        // 1. SUBIR Z (Se hace pequeño)
+        statusText.innerText = "Acción: robot.subir_z()";
+        robotVis.z_radio = 7; dibujar();
+        await new Promise(r => setTimeout(r, 600));
+
+        // 2. TRASLADAR XY
+        statusText.innerText = "Acción: robot.trasladar_xy()";
+        let targetX = (destCoord.X === 500) ? 455 : 45;
+        let pasos = 40;
+        let dx = (targetX - robotVis.x) / pasos;
+        let dy = (355 - robotVis.y) / pasos;
+
+        for(let i=0; i<pasos; i++) {
+            robotVis.x += dx; robotVis.y += dy;
+            dibujar(); await new Promise(r => setTimeout(r, 20));
+        }
+
+        // 3. BAJAR Z (Se hace grande)
+        statusText.innerText = "Acción: robot.bajar_z()";
+        robotVis.z_radio = 18; dibujar();
+        await new Promise(r => setTimeout(r, 600));
+
+        // 4. SOLTAR
+        statusText.innerText = "Acción: robot.soltar()";
+        robotVis.color = "#ced4da"; dibujar();
+        await new Promise(r => setTimeout(r, 800));
+
+        // Reset
+        robotVis = { x: 250, y: 50, z_radio: 12, color: '#4dabf7' };
+        statusText.innerText = "Ciclo terminado. Robot en Home.";
+        dibujar();
+    }
+
+    function enviar(tipo) {
+        fetch('/clasificar', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ sensor: tipo })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.error) alert(data.error);
+            else animar(data.destino);
+        });
+    }
+
+    function parada() {
+        fetch('/emergencia', { method: 'POST' })
+        .then(() => {
+            statusText.innerText = "⚠️ SISTEMA DETENIDO POR E-STOP";
+            statusText.style.color = "red";
+        });
+    }
+
+    dibujar();
+</script>
+</body>
+</html>
